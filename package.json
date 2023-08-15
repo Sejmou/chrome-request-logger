@@ -1,8 +1,8 @@
 {
-  "name": "vite-web-extension",
-  "displayName": "Web Extension Boilerplate",
+  "name": "request-logger-chrome",
+  "displayName": "Request Logger",
   "version": "1.1.0",
-  "description": "A simple chrome extension template with Vite, React, TypeScript and Tailwind CSS.",
+  "description": "A Chrome extension that logs data about requests made by the browser.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -14,10 +14,13 @@
   },
   "type": "module",
   "dependencies": {
+    "@extend-chrome/messages": "^1.2.2",
+    "@extend-chrome/storage": "^1.5.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "vite-plugin-css-injected-by-js": "^3.1.1",
-    "webextension-polyfill": "^0.10.0"
+    "webextension-polyfill": "^0.10.0",
+    "zod": "^3.21.4"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.237",

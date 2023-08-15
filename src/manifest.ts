@@ -17,13 +17,10 @@ const manifest: Manifest.WebExtensionManifest = {
     default_popup: 'src/pages/popup/index.html',
     default_icon: 'icon-34.png',
   },
-  chrome_url_overrides: {
-    newtab: 'src/pages/newtab/index.html',
-  },
   icons: {
     '128': 'icon-128.png',
   },
-  permissions: ["activeTab"],
+  permissions: ['activeTab', 'tabs', 'debugger', 'storage'],
   content_scripts: [
     {
       matches: ['http://*/*', 'https://*/*', '<all_urls>'],

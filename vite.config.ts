@@ -4,7 +4,7 @@ import { defineConfig } from 'vite';
 import makeManifest from './utils/plugins/make-manifest';
 import buildContentScript from './utils/plugins/build-content-script';
 import { outputFolderName } from './utils/constants';
- 
+
 const root = resolve(__dirname, 'src');
 const pagesDir = resolve(root, 'pages');
 const assetsDir = resolve(root, 'assets');
@@ -31,11 +31,10 @@ export default defineConfig({
         panel: resolve(pagesDir, 'panel', 'index.html'),
         background: resolve(pagesDir, 'background', 'index.ts'),
         popup: resolve(pagesDir, 'popup', 'index.html'),
-        newtab: resolve(pagesDir, 'newtab', 'index.html'),
         options: resolve(pagesDir, 'options', 'index.html'),
       },
       output: {
-        entryFileNames: (chunk) => `src/pages/${chunk.name}/index.js`,
+        entryFileNames: chunk => `src/pages/${chunk.name}/index.js`,
       },
     },
   },
