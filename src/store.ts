@@ -32,13 +32,3 @@ export type SessionData = {
 
 const storeKey = 'loggerData';
 export const store = getBucket<SessionStore>(storeKey);
-
-export type LogStateUpdate = [trackId: number, loggingEnabled: boolean];
-
-type LogEnableOrDisable = {
-  data: LogStateUpdate;
-}; // only array as value does not work as expected -> Object with keys 0 and 1 is returned instead of array (for nerds reading this: I know, technically arrays are also objects but I guess the Prototype inheritance BS is not done correctly)
-
-// abusing bucket for passing messages between background script and panel script (probably not the cleanest solution but it works)
-export const logEnableOrDisable =
-  getBucket<LogEnableOrDisable>('logEnableOrDisable');

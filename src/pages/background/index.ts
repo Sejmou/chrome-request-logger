@@ -1,10 +1,5 @@
-import {
-  store,
-  logEnableOrDisable,
-  type SessionData,
-  type LogStateUpdate,
-  requestLogEntryValidator,
-} from '@src/store';
+import { logStateSetRequestStream, sendCurrentlyLogged } from '@src/messages';
+import { store, type SessionData, requestLogEntryValidator } from '@src/store';
 
 console.log('background script loaded');
 
@@ -32,41 +27,27 @@ function removeDebuggerFromTab(tabId: number) {
   });
 }
 
-let lastLogStateUpdateRequest: LogStateUpdate | undefined;
 const activeSessions = new Set<number>();
 
-logEnableOrDisable.valueStream.subscribe(async request => {
-  // on first run of the extension, update will actually be {}
-  // handle this accordingly
-  if (Object.keys(request).length === 0) {
-    return;
-  }
-  const [tabId, loggingEnabled] = request.data;
-  if (lastLogStateUpdateRequest) {
-    const [lastTabId, lastLoggingEnabled] = lastLogStateUpdateRequest;
-    if (lastTabId === tabId && lastLoggingEnabled === loggingEnabled) {
-      console.log('logging state did not change, skipping');
-      return;
-    }
-  }
-  lastLogStateUpdateRequest = request.data;
-  console.log('tab ID logging state changed', request);
-  try {
-    const tab = await chrome.tabs.get(tabId);
-    console.log('setting logging state for tab', tabId, 'to', loggingEnabled);
-    if (tab?.url?.startsWith('http')) {
-      if (tab.id) {
-        if (loggingEnabled) {
-          attachDebuggerToTab(tab.id);
-          activeSessions.add(tab.id);
-        } else {
-          removeDebuggerFromTab(tab.id);
-          activeSessions.delete(tab.id);
-        }
+logStateSetRequestStream.subscribe(async ([request]) => {
+  const { tabId, logging: shouldLog } = request;
+  const tab = await chrome.tabs.get(tabId);
+  if (tab?.url?.startsWith('http')) {
+    if (tab.id) {
+      if (shouldLog) {
+        console.log(`enabling logging for tab ID ${tab.id}`);
+        attachDebuggerToTab(tab.id);
+        activeSessions.add(tab.id);
+        sendCurrentlyLogged(Array.from(activeSessions));
+      } else {
+        console.log(`disabling logging for tab ID ${tab.id}`);
+        removeDebuggerFromTab(tab.id);
+        activeSessions.delete(tab.id);
+        sendCurrentlyLogged(Array.from(activeSessions));
       }
+    } else {
+      console.warn('UNEXPECTED: no tab ID found in tab', tab);
     }
-  } catch (error) {
-    console.warn('could not find tab', tabId, '- probably closed');
   }
 });
 
@@ -104,11 +85,8 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 // write session updates to store every second (to not trigger too many state updates at once in the UI)
 setInterval(async () => {
   const storageSessions = (await store.get()).sessions || {}; // initially (on first extension run), store is undefined
-  console.log('stored sessions', storageSessions);
-  console.log('in memory sessions', sessionsInMemory);
   for (const [tabId, inMemorySession] of sessionsInMemory.entries()) {
     const storedSession = storageSessions[tabId];
-    console.log('stored session', storedSession);
     if (storedSession) {
       // check if timestamp of last stored request matches timestamp of last request
       // if it does, we must NOT append any requests to the stored request array as it is already up to date
@@ -116,9 +94,6 @@ setInterval(async () => {
         storedSession.requests.at(-1)?.timestamp ===
         inMemorySession.requests.at(-1)?.timestamp
       ) {
-        console.log(
-          `stored session requests for tab ID '${tabId}' up to date, not appending anything`
-        );
         continue;
       }
       storedSession.requests = storedSession.requests.concat(

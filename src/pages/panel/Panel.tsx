@@ -1,28 +1,37 @@
-import { useEffect, useRef, useState } from 'react';
-import '@pages/panel/Panel.css';
-import { logEnableOrDisable, store, type SessionData } from '@src/store';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { store, type SessionData } from '@src/store';
+import { currentlyLoggedStream, setLogState } from '@src/messages';
 
 export default function Panel(): JSX.Element {
   const [sessionData, setSessionData] = useState<SessionData>();
-  const [loggingEnabled, setLoggingEnabled] = useState(false);
+  const [activeSessions, setActiveSessions] = useState<Set<number>>(new Set());
   const tabIdRef = useRef<number>();
+  const logging = useMemo(
+    () => !!tabIdRef.current && activeSessions.has(tabIdRef.current),
+    [activeSessions]
+  );
   console.log('rendering panel');
 
   useEffect(() => {
     const tabId = chrome.devtools.inspectedWindow.tabId;
     console.log('tab ID', tabId);
     tabIdRef.current = tabId;
-    const sub = store.valueStream.subscribe(value => {
+    const sessionDataSub = store.valueStream.subscribe(value => {
       const sessionData = value.sessions[tabId];
       console.log('session data', sessionData);
       setSessionData(value.sessions[tabId]);
     });
+    const sessionStateSub = currentlyLoggedStream.subscribe(([value]) => {
+      console.log('currently logged', value);
+      setActiveSessions(new Set(value));
+    });
     return () => {
-      sub.unsubscribe();
+      sessionDataSub.unsubscribe();
+      sessionStateSub.unsubscribe();
     };
   }, []);
 
-  const handleCheckboxChange = (newValue: boolean) => {
+  const handleCheckboxChange = async (newValue: boolean) => {
     const tabId = tabIdRef.current;
     if (!tabId) {
       console.warn('tab ID ref not set');
@@ -30,17 +39,28 @@ export default function Panel(): JSX.Element {
     }
     console.log('tabId ref value', tabId);
     console.log('new checkbox value', newValue);
-    setLoggingEnabled(newValue); // optimistic update
-    logEnableOrDisable.set({ data: [tabId, newValue] }); // request background script to update loggingEnabled for session in store
+    await setLogState({
+      tabId,
+      logging: newValue,
+    });
+    console.log('set log state request sent');
   };
 
   return (
     <div className="container">
       <Checkbox
-        checked={loggingEnabled}
+        checked={logging}
         onChange={handleCheckboxChange}
         label="Enable logging"
       />
+      <h2>Requests</h2>
+      <ul>
+        {sessionData?.requests.map((request, i) => (
+          <li key={i}>
+            {request.response.url} ({request.type})
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -51,7 +71,7 @@ const Checkbox = ({
   label,
 }: {
   checked: boolean;
-  onChange: (loggingEnabled: boolean) => void;
+  onChange: (checked: boolean) => void;
   label: string;
 }) => {
   return (
@@ -60,7 +80,7 @@ const Checkbox = ({
         type="checkbox"
         checked={checked}
         onChange={e => onChange(e.target.checked)}
-        className="form-checkbox h-5 w-5 text-gray-600"
+        className="h-5 w-5 text-gray-600"
       />
       <span className="text-gray-200">{label}</span>
     </label>
