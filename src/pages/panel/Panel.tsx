@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { store, type SessionData } from '@src/store';
 import { currentlyLoggedStream, setLogState } from '@src/messages';
 
+type RequestData = SessionData['requests'][number];
+
 export default function Panel(): JSX.Element {
   const [sessionData, setSessionData] = useState<SessionData>();
   const [activeSessions, setActiveSessions] = useState<Set<number>>(new Set());
@@ -19,7 +21,7 @@ export default function Panel(): JSX.Element {
     const sessionDataSub = store.valueStream.subscribe(value => {
       const sessionData = value.sessions[tabId];
       console.log('session data', sessionData);
-      setSessionData(value.sessions[tabId]);
+      setSessionData(sessionData);
     });
     const sessionStateSub = currentlyLoggedStream.subscribe(([value]) => {
       console.log('currently logged', value);
@@ -46,18 +48,39 @@ export default function Panel(): JSX.Element {
     console.log('set log state request sent');
   };
 
+  const filteredRequests: RequestData[] = useMemo(() => {
+    if (!sessionData) {
+      return [];
+    }
+    return sessionData.requests.filter(request => {
+      if (request.type === 'XHR') {
+        return true;
+      }
+      if (request.type === 'Fetch') {
+        return true;
+      }
+    });
+  }, [sessionData]);
+
   return (
-    <div className="container">
+    <div className="container p-1">
+      <h2>Requests</h2>
       <Checkbox
         checked={logging}
         onChange={handleCheckboxChange}
         label="Enable logging"
       />
-      <h2>Requests</h2>
-      <ul>
-        {sessionData?.requests.map((request, i) => (
+      <ul className="p-1 list-disc list-inside">
+        {filteredRequests.map((request, i) => (
           <li key={i}>
-            {request.response.url} ({request.type})
+            {request.response.url} ({request.type}){' '}
+            <Button
+              onClick={() => {
+                copyTextToClipboard(request.response.headers);
+              }}
+            >
+              Copy request headers to clipboard
+            </Button>
           </li>
         ))}
       </ul>
@@ -86,3 +109,38 @@ const Checkbox = ({
     </label>
   );
 };
+
+const Button = ({
+  onClick,
+  children,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+}) => {
+  return (
+    <button
+      onClick={onClick}
+      className="bg-gray-800 hover:bg-gray-700 text-white py-2 px-4 rounded"
+    >
+      {children}
+    </button>
+  );
+};
+
+/**
+ * copies text to the clipboard; workaround for navigator.clipboard.writeText which doesn't seem to work here
+ *
+ * @param text the string to copy to the clipboard
+ */
+function copyTextToClipboard(text: string | object) {
+  if (typeof text === 'object') {
+    text = JSON.stringify(text, null, 2);
+  }
+  console.log('copying text to clipboard', text);
+  const tempInput = document.createElement('input');
+  tempInput.value = text;
+  document.body.appendChild(tempInput);
+  tempInput.select();
+  document.execCommand('copy');
+  document.body.removeChild(tempInput);
+}
