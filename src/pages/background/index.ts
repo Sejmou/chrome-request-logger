@@ -1,86 +1,49 @@
-import { logStateSetRequestStream, sendCurrentlyLogged } from '@src/messages';
-import { store, type SessionData, requestLogEntryValidator } from '@src/store';
+import { store, type SessionData } from '@src/store';
 
 console.log('background script loaded');
 
-// Create a function to attach debugger
-function attachDebuggerToTab(tabId: number) {
-  chrome.debugger.attach({ tabId: tabId }, '1.2', function () {
-    chrome.debugger.sendCommand(
-      { tabId: tabId },
-      'Network.enable',
-      {},
-      function () {
-        if (chrome.runtime.lastError) {
-          console.error(chrome.runtime.lastError);
-        }
-      }
-    );
-  });
-}
-
-function removeDebuggerFromTab(tabId: number) {
-  chrome.debugger.detach({ tabId: tabId }, function () {
-    if (chrome.runtime.lastError) {
-      console.error(chrome.runtime.lastError);
-    }
-  });
-}
-
 const activeSessions = new Set<number>();
 
-logStateSetRequestStream.subscribe(async ([request]) => {
-  const { tabId, logging: shouldLog } = request;
-  const tab = await chrome.tabs.get(tabId);
-  if (tab?.url?.startsWith('http')) {
-    if (tab.id) {
-      if (shouldLog) {
-        console.log(`enabling logging for tab ID ${tab.id}`);
-        attachDebuggerToTab(tab.id);
-        activeSessions.add(tab.id);
-        sendCurrentlyLogged(Array.from(activeSessions));
-      } else {
-        console.log(`disabling logging for tab ID ${tab.id}`);
-        removeDebuggerFromTab(tab.id);
-        activeSessions.delete(tab.id);
-        sendCurrentlyLogged(Array.from(activeSessions));
-      }
-    } else {
-      console.warn('UNEXPECTED: no tab ID found in tab', tab);
-    }
+// listen for tab creation, start logging requests for new tab
+chrome.tabs.onCreated.addListener(tab => {
+  if (tab.id) {
+    console.log(`logging requests for tab ID ${tab.id}`);
+    activeSessions.add(tab.id);
   }
+});
+
+// Listen for tab removal/close, cleanup/remove collected data
+chrome.tabs.onRemoved.addListener(tabId => {
+  console.log(`Tab with ID ${tabId} removed, stopping logging.`);
+  activeSessions.delete(tabId);
+  sessionsInMemory.delete(tabId);
 });
 
 // keep track of sessions in memory (and only periodically write to store to not trigger too many state updates at once in the UI)
 const sessionsInMemory: Map<number, SessionData> = new Map();
 
-// Listen for debugger events
-chrome.debugger.onEvent.addListener((source, method, params) => {
-  if (method === 'Network.responseReceived') {
-    // console.log('source', source); // contains data about the tab
-    // console.log('method', method); // method is always Network.responseReceived
-    // console.log('params', params); // contains data about the response
-    const { tabId } = source;
+// Listen for network responses
+chrome.webRequest.onCompleted.addListener(
+  (completedRequest: chrome.webRequest.WebResponseCacheDetails) => {
+    console.log('new completed request', completedRequest);
+    const { tabId } = completedRequest;
     if (tabId) {
       const existingSession = sessionsInMemory.get(tabId);
-      const logEntry = requestLogEntryValidator.parse(params);
       const session: SessionData = existingSession || {
-        startedAt: logEntry.timestamp,
-        requests: [logEntry],
+        startedAt: completedRequest.timeStamp,
+        requests: [completedRequest],
       };
       if (existingSession) {
-        existingSession.requests.push(logEntry);
+        existingSession.requests.push(completedRequest);
         return;
       }
       sessionsInMemory.set(tabId, session);
     } else {
-      console.warn(
-        'UNEXPECTED: no tab ID found in source for received response',
-        source
-      );
+      console.warn('Request is not associated with a particular tab.');
     }
-  }
-});
+  },
+  { urls: ['<all_urls>'] }
+);
 
 // write session updates to store every second (to not trigger too many state updates at once in the UI)
 setInterval(async () => {
@@ -91,8 +54,8 @@ setInterval(async () => {
       // check if timestamp of last stored request matches timestamp of last request
       // if it does, we must NOT append any requests to the stored request array as it is already up to date
       if (
-        storedSession.requests.at(-1)?.timestamp ===
-        inMemorySession.requests.at(-1)?.timestamp
+        storedSession.requests.at(-1)?.timeStamp ===
+        inMemorySession.requests.at(-1)?.timeStamp
       ) {
         continue;
       }

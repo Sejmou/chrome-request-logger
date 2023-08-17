@@ -20,14 +20,15 @@ const manifest: Manifest.WebExtensionManifest = {
   icons: {
     '128': 'icon-128.png',
   },
-  permissions: ['activeTab', 'tabs', 'debugger', 'storage', 'clipboardWrite'],
-  content_scripts: [
-    {
-      matches: ['http://*/*', 'https://*/*', '<all_urls>'],
-      js: ['src/pages/content/index.js'],
-      css: ['contentStyle.css'],
-    },
+  permissions: [
+    'activeTab',
+    'tabs',
+    'debugger',
+    'storage',
+    'clipboardWrite',
+    'webRequest',
   ],
+  host_permissions: ['<all_urls>'],
   devtools_page: 'src/pages/devtools/index.html',
   web_accessible_resources: [
     {
